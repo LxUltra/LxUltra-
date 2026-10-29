@@ -20,6 +20,10 @@ ORIG_EXE = BACKUP_EXE if os.path.exists(BACKUP_EXE) else r"D:\LxUltra\LxUltra.ex
 ORIG_APP = os.path.join(HERE, "_extract", "s_app")
 WRAPPER_SRC = os.path.join(HERE, "app_wrapper.py")
 MIGRATION_SRC = os.path.join(HERE, "migration_engine.py")
+DRIVER_SRC = os.path.join(HERE, "driver_updates.py")
+CPU_TELEMETRY_SRC = os.path.join(HERE, "cpu_telemetry.py")
+SOFTWARE_MANAGER_SRC = os.path.join(HERE, "software_manager.py")
+STORAGE_SAFETY_SRC = os.path.join(HERE, "storage_safety.py")
 OUT_EXE = os.path.join(HERE, "LxUltra_patched.exe")
 MAGIC = b"MEI\014\013\012\013\016"
 
@@ -65,6 +69,10 @@ def main():
     # Embed the migration engine so the installed executable has no loose Python
     # module dependency.  The verified wimlib binary remains a separate tool.
     wrapper_src = (open(MIGRATION_SRC, "r", encoding="utf-8").read() + "\n" +
+                   open(DRIVER_SRC, "r", encoding="utf-8").read() + "\n" +
+                   open(CPU_TELEMETRY_SRC, "r", encoding="utf-8").read() + "\n" +
+                   open(SOFTWARE_MANAGER_SRC, "r", encoding="utf-8").read() + "\n" +
+                   open(STORAGE_SAFETY_SRC, "r", encoding="utf-8").read() + "\n" +
                    open(WRAPPER_SRC, "r", encoding="utf-8").read())
     b64 = base64.b64encode(orig_app_bytes).decode("ascii")
     final_src = wrapper_src.replace("@@ORIG_B64@@", b64, 1)
@@ -129,7 +137,10 @@ def main():
                 walk(k)
     walk(code2)
     for sym in ("_bootstrap", "_install_partition_methods", "partition_disks",
-                "partition_job_submit", "partition_migration_plan", "_WindowsMigrationAdapter"):
+                "partition_job_submit", "partition_migration_plan", "_WindowsMigrationAdapter",
+                "fm_software_move", "storage_ai_exclusions_list",
+                "storage_ai_exclusions_add", "storage_ai_exclusions_remove",
+                "filter_storage_status", "_ai_protected_directory"):
         assert sym in names or sym in str(code2.co_consts), "missing symbol %s" % sym
     # 原模块字节码仍内嵌可解码
     consts = [c for c in code2.co_consts if isinstance(c, str) and len(c) > 100000]

@@ -116,6 +116,26 @@ def main():
 
         software = page.locator('[data-junk-cat="software"]')
         check("common software cache starts unchecked", not software.is_checked())
+        main_tabs = page.locator(".fm-tabs [data-fm-tab]").evaluate_all(
+            "nodes => nodes.map(node => [node.dataset.fmTab, node.textContent.trim()])")
+        check("software management follows file organizer in the first row",
+              main_tabs[:2] == [["organize", "文件整理"], ["software", "软件管理"]],
+              repr(main_tabs[:3]))
+        cleanup_tabs = page.locator(".fm-subtabs [data-fm-subtab]").evaluate_all(
+            "nodes => nodes.map(node => [node.dataset.fmSubtab, node.textContent.trim()])")
+        check("garbage cleanup is named clearly and precedes file shredding",
+              ["junk", "垃圾清理"] in cleanup_tabs and ["shred", "文件粉碎"] in cleanup_tabs and
+              cleanup_tabs.index(["junk", "垃圾清理"]) < cleanup_tabs.index(["shred", "文件粉碎"]),
+              repr(cleanup_tabs))
+        check("large-file migration has a file icon slot in rendered rows",
+              "fm-file-icon" in JS and "fm-file-icon" in CSS)
+        check("garbage cleanup results have a visible category icon",
+              "fm-junk-icon" in JS and "fm-junk-icon" in CSS)
+        check("software management section and refresh action are present",
+              page.locator("#fm-section-software #fm-software-refresh").count() == 1 and
+              page.locator("#fm-section-software #fm-software-list").count() == 1)
+        check("software management tab opens the installed software list",
+              "software" in JS and "fm_software_list" in JS and "fm_software_uninstall" in JS)
         page.mouse.move(0, 0)
         page.screenshot(path=str(ROOT / "shots" / "10_file_tabs_style.png"), full_page=True)
 
@@ -129,6 +149,10 @@ def main():
         show_pane = extract_function(HTML, "function showPane(id)")
         page.add_script_tag(content="""
           const pages={repair:['电脑修复','系统与网络修复']};
+          // showPane delegates the scroll reset to the main-page helper.
+          // Keep this focused test harness self-contained; nav_test.py exercises
+          // the real reset behavior against the installed page.
+          function resetPaneScroll(){}
           function setText(id,value){document.getElementById(id).textContent=value}
           function pollMaintenance(){window.__repairPolls=(window.__repairPolls||0)+1}
         """ + show_pane + "window.__showPane=showPane;")
@@ -138,6 +162,23 @@ def main():
               page.locator("#nav [data-pane='repair'].active").count() == 1 and
               page.evaluate("window.__repairPolls") == 1,
               f"active panels={panes}")
+        page.evaluate("""() => document.body.insertAdjacentHTML('beforeend',
+          '<select id="storage-drive"><option value="X:">旧盘符</option></select>'
+          + '<p id="storage-status"></p>')""")
+        page.add_script_tag(content="""
+          function $(id){return document.getElementById(id)}
+          function api(){return window.pywebview.api}
+          function escapeHtml(value){return String(value)}
+        """ + extract_function(HTML, "async function loadStorageDrives()"))
+        page.evaluate("window.pywebview={api:{storage_drives:async()=>({ok:false,error:'磁盘列表暂不可用'})}}")
+        storage_result = page.evaluate("""async () => {
+          try { return {ok:await loadStorageDrives(), status:document.getElementById('storage-status').textContent,
+            selected:document.getElementById('storage-drive').value}; }
+          catch(error) { return {error:String(error)}; }
+        }""")
+        check("failed disk list request shows an error without breaking file cleanup",
+              storage_result.get("ok") is False and "失败" in storage_result.get("status", "")
+              and storage_result.get("selected") == "all", repr(storage_result))
         browser.close()
 
     nav = HTML.split('id="nav"', 1)[1].split("</nav>", 1)[0]
@@ -147,6 +188,13 @@ def main():
           'data-pane="network"' not in nav and 'data-pane="systemrepair"' not in nav)
     check("both repair feature panels remain available",
           {"network", "systemrepair"}.issubset(pane_ids))
+
+    check("process and startup management share one sidebar entry",
+          nav.count('data-pane="programs"') == 1 and
+          'data-pane="processes"' not in nav and 'data-pane="startup"' not in nav)
+    check("program management keeps both internal functions",
+          'id="program-management-tabs"' in HTML and
+          'data-program-view="startup"' in HTML and 'data-program-view="processes"' in HTML)
 
     print(f"{sum(results)}/{len(results)} checks passed")
     return 0 if all(results) else 1

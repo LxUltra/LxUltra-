@@ -1,0 +1,13 @@
+.driver-panel{max-width:1100px;padding:24px}.driver-panel .row{align-items:flex-start;gap:20px}.driver-panel .toolbar{flex:none}.driver-status-row{display:flex;align-items:center;gap:9px;min-height:28px;margin:18px 0 12px;color:var(--muted)}.driver-status-row p{margin:0}.driver-status-row .mini{margin-left:auto}.driver-pulse{width:9px;height:9px;border-radius:50%;background:var(--line);flex:none}.driver-panel.is-running .driver-pulse{background:var(--accent);animation:benchmark-pulse 1.4s ease-in-out infinite}.driver-list{display:grid;gap:8px;min-height:50px}.driver-row{display:flex;align-items:center;gap:13px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);cursor:pointer}.driver-row:hover{border-color:var(--accent)}.driver-row input{accent-color:var(--accent);width:17px;height:17px;flex:none}.driver-row span{min-width:0}.driver-row strong,.driver-row small{display:block}.driver-row small{margin-top:4px;color:var(--muted)}@media(max-width:760px){.driver-panel .row{display:block}.driver-panel .toolbar{margin-top:12px;flex-wrap:wrap}}
+#driver-updates.is-running .driver-pulse{width:18px;height:18px;box-sizing:border-box;border:3px solid color-mix(in srgb,var(--accent) 22%,transparent);border-top-color:var(--accent);background:transparent;animation:driver-spin .8s linear infinite}
+#driver-updates.is-running .driver-status-row{position:relative;padding-bottom:10px}
+#driver-updates.is-running .driver-status-row::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:linear-gradient(90deg,transparent,var(--accent),transparent);background-size:45% 100%;background-repeat:no-repeat;animation:driver-scan-line 1.5s ease-in-out infinite}
+@keyframes driver-spin{to{transform:rotate(360deg)}}
+@keyframes driver-scan-line{0%{background-position:-75% 0}100%{background-position:175% 0}}
+.driver-progress{margin:0 0 14px;height:24px;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px}
+.driver-progress[hidden]{display:none}
+.driver-progress-track{height:8px;min-width:100px;flex:1;border-radius:99px;background:var(--line);overflow:hidden}
+#driver-progress-bar{display:block;height:100%;width:0;background:var(--accent);border-radius:99px;transition:width .35s ease}
+.driver-progress.is-indeterminate #driver-progress-bar{width:35%!important;animation:driver-indeterminate 1.4s ease-in-out infinite}
+@keyframes driver-indeterminate{0%{transform:translateX(-110%)}100%{transform:translateX(300%)}}
+@media(prefers-reduced-motion:reduce){#driver-updates.is-running .driver-pulse{animation-duration:2s}#driver-updates.is-running .driver-status-row::after,.driver-progress.is-indeterminate #driver-progress-bar{animation-duration:3s}}

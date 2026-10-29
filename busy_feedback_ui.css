@@ -1,0 +1,92 @@
+[role="status"][aria-busy="true"],
+[role="status"][data-ui-waiting="true"],
+[aria-live="polite"][aria-busy="true"],
+[aria-live="polite"][data-ui-waiting="true"],
+[aria-live="assertive"][aria-busy="true"],
+[aria-live="assertive"][data-ui-waiting="true"] {
+  position: relative;
+  padding-bottom: 13px;
+}
+
+[role="status"][aria-busy="true"]::before,
+[role="status"][data-ui-waiting="true"]::before,
+[aria-live="polite"][aria-busy="true"]::before,
+[aria-live="polite"][data-ui-waiting="true"]::before,
+[aria-live="assertive"][aria-busy="true"]::before,
+[aria-live="assertive"][data-ui-waiting="true"]::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-top-color: var(--accent, currentColor);
+  border-radius: 50%;
+  animation: lx-busy-spin 850ms linear infinite;
+}
+
+[role="status"][aria-busy="true"]::after,
+[role="status"][data-ui-waiting="true"]::after,
+[aria-live="polite"][aria-busy="true"]::after,
+[aria-live="polite"][data-ui-waiting="true"]::after,
+[aria-live="assertive"][aria-busy="true"]::after,
+[aria-live="assertive"][data-ui-waiting="true"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--line, currentColor) 70%, transparent);
+}
+
+[role="status"][aria-busy="true"]::after,
+[role="status"][data-ui-waiting="true"]::after {
+  background: linear-gradient(90deg, transparent 0 8%, var(--accent, currentColor) 42% 58%, transparent 92% 100%);
+  background-size: 220% 100%;
+  animation: lx-busy-sweep 1.35s ease-in-out infinite;
+}
+
+button[data-ui-busy="true"] {
+  position: relative;
+  padding-right: 34px;
+}
+
+button[data-ui-busy="true"]::after {
+  content: "";
+  position: absolute;
+  right: 11px;
+  top: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: lx-busy-spin 850ms linear infinite;
+}
+
+@keyframes lx-busy-spin { to { transform: rotate(360deg); } }
+@keyframes lx-busy-sweep { from { background-position: 100% 0; } to { background-position: -120% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  [role="status"][aria-busy="true"]::before,
+  [role="status"][data-ui-waiting="true"]::before,
+  [aria-live="polite"][aria-busy="true"]::before,
+  [aria-live="polite"][data-ui-waiting="true"]::before,
+  [aria-live="assertive"][aria-busy="true"]::before,
+  [aria-live="assertive"][data-ui-waiting="true"]::before,
+  button[data-ui-busy="true"]::after {
+    animation: none;
+    border-top-color: currentColor;
+  }
+  [role="status"][aria-busy="true"]::after,
+  [role="status"][data-ui-waiting="true"]::after {
+    animation: none;
+    background: var(--accent, currentColor);
+    transform: scaleX(.34);
+  }
+}

@@ -23,6 +23,9 @@ import tempfile
 _ORIG_B64 = "@@ORIG_B64@@"
 
 _WRAPPER_TAG = "partition-wrapper/1.1.0-system-migration"
+_DRIVER_UPDATES = DriverUpdateManager() if "DriverUpdateManager" in globals() else None
+_CPU_FREQ_SAMPLER = CpuFrequencySampler() if "CpuFrequencySampler" in globals() else None
+_SOFTWARE_MANAGER = SoftwareManager() if "SoftwareManager" in globals() else None
 
 
 def _migration_plan_from_snapshot(disks, source_disk, target_disk, target_part,
@@ -248,6 +251,116 @@ _wrap_log("module import: argv=%r meipass=%r frozen=%r" % (
 # 分区助手后端:挂在 API 类上的方法实现
 # ============================================================
 def _install_partition_methods(API):
+    if "install_storage_guards" in globals():
+        try:
+            install_storage_guards(API)
+        except Exception as e:
+            _wrap_log("storage safety guards failed to install: %r" % (e,))
+    original_metrics = getattr(API, "metrics", None)
+    original_process_icons = getattr(API, "process_icons", None)
+
+    def metrics(self):
+        result = original_metrics(self)
+        if not isinstance(result, dict):
+            return result
+        telemetry = result.get("temperatures") or {}
+        cpu = result.get("cpu") or {}
+        rows = telemetry.get("sensors") or []
+        p_names = {str(r.get("name")) for r in rows if r.get("key") == "cpu"
+                   and r.get("type") == "Clock" and str(r.get("name", "")).startswith("P-Core #")}
+        e_names = {str(r.get("name")) for r in rows if r.get("key") == "cpu"
+                   and r.get("type") == "Clock" and str(r.get("name", "")).startswith("E-Core #")}
+        if _CPU_FREQ_SAMPLER:
+            summary = summarize_frequencies(_CPU_FREQ_SAMPLER.current(), len(p_names), len(e_names))
+            if summary:
+                cpu["frequency"] = summary["p_average"]
+                cpu["peakFrequency"] = summary["p_peak"]
+                cpu["eCoreFrequency"] = summary["e_average"]
+                cpu["frequencySource"] = "Windows 实际频率"
+            else:
+                cpu["frequencySource"] = "硬件传感器时钟"
+        voltage = classify_voltage(rows) if "classify_voltage" in globals() else {}
+        if isinstance(telemetry.get("cpu"), dict):
+            telemetry["cpu"]["vcore"] = voltage.get("vcore")
+            telemetry["cpu"]["voltageSource"] = "传感器各核心报告值；与 CPU-Z 采样口径可能不同"
+        return result
+
+    def driver_updates_scan(self):
+        return _DRIVER_UPDATES.scan() if _DRIVER_UPDATES else {"ok": False, "error": "驱动检测组件未加载"}
+
+    def driver_updates_status(self):
+        return _DRIVER_UPDATES.status() if _DRIVER_UPDATES else {"ok": False, "error": "驱动检测组件未加载"}
+
+    def driver_updates_install(self, keys):
+        return _DRIVER_UPDATES.install(keys) if _DRIVER_UPDATES else {"ok": False, "error": "驱动检测组件未加载"}
+
+    def fm_software_list(self):
+        return _SOFTWARE_MANAGER.scan() if _SOFTWARE_MANAGER else {
+            "ok": False, "error": "软件清单组件未加载", "items": []}
+
+    def fm_software_uninstall(self, identifier):
+        return _SOFTWARE_MANAGER.uninstall(identifier) if _SOFTWARE_MANAGER else {
+            "ok": False, "error": "软件清单组件未加载"}
+
+    def fm_software_move(self, identifier, destination_root):
+        return _SOFTWARE_MANAGER.move(identifier, destination_root) if _SOFTWARE_MANAGER else {
+            "ok": False, "error": "软件搬家组件未加载"}
+
+    def fm_software_icons(self, identifiers):
+        return _SOFTWARE_MANAGER.icons(identifiers) if _SOFTWARE_MANAGER else {
+            "ok": False, "error": "软件图标组件未加载", "icons": {}}
+
+    def process_icons(self, paths):
+        """Normalize caller paths before checking the current process snapshot allowlist."""
+        if not callable(original_process_icons) or not isinstance(paths, list) or len(paths) > 48:
+            return {}
+        lock = getattr(self, "_process_icon_lock", None)
+        if lock is None:
+            return {}
+        try:
+            with lock:
+                allowed = tuple(getattr(self, "_process_icon_allowed", set()))
+        except Exception:
+            return {}
+        canonical_allowed = set()
+        for value in allowed:
+            try:
+                candidate = os.path.normcase(os.path.realpath(str(value)))
+                if candidate and os.path.isfile(candidate):
+                    canonical_allowed.add(candidate)
+            except (OSError, TypeError, ValueError):
+                continue
+        canonical_paths, raw_by_canonical = [], {}
+        for value in paths:
+            if not isinstance(value, str) or not value:
+                continue
+            try:
+                if os.path.splitext(value)[1].casefold() != ".exe":
+                    continue
+                canonical = os.path.normcase(os.path.realpath(value))
+                if canonical not in canonical_allowed or not os.path.isfile(canonical):
+                    continue
+                if canonical not in raw_by_canonical:
+                    raw_by_canonical[canonical] = []
+                    canonical_paths.append(canonical)
+                raw_by_canonical[canonical].append(value)
+            except (OSError, TypeError, ValueError):
+                continue
+        if not canonical_paths:
+            return {}
+        try:
+            icons = original_process_icons(self, canonical_paths)
+        except Exception:
+            return {}
+        if not isinstance(icons, dict):
+            return {}
+        result = {}
+        for canonical, raw_values in raw_by_canonical.items():
+            icon = icons.get(canonical)
+            if isinstance(icon, str) and icon:
+                for raw in raw_values:
+                    result[raw] = icon
+        return result
     import json
     import re
     import subprocess
@@ -1312,6 +1425,14 @@ foreach ($d in (Get-Disk -ErrorAction Stop)) {
         return {"ok": True, "vhds": data or []}
 
     methods = {
+        "driver_updates_scan": driver_updates_scan,
+        "driver_updates_status": driver_updates_status,
+        "driver_updates_install": driver_updates_install,
+        "fm_software_list": fm_software_list,
+        "fm_software_uninstall": fm_software_uninstall,
+        "fm_software_move": fm_software_move,
+        "fm_software_icons": fm_software_icons,
+        "process_icons": process_icons,
         "partition_disks": partition_disks,
         "partition_migration_plan": partition_migration_plan,
         "partition_health": partition_health,
@@ -1323,6 +1444,8 @@ foreach ($d in (Get-Disk -ErrorAction Stop)) {
     }
     for name, fn in methods.items():
         setattr(API, name, fn)
+    if original_metrics:
+        API.metrics = metrics
     _wrap_log("partition methods installed on API: %s" % ", ".join(methods))
 
 
