@@ -103,7 +103,7 @@
         const detail = bestSubscore
           ? `常规综合 ${score.toFixed(1)} · 当前最高 ${bestSubscore.label} ${bestSubscore.value.toFixed(1)}`
           : `Windows 综合评分 ${score.toFixed(1)}`;
-        verdict.innerHTML = `<span class="benchmark-verdict-icon" aria-hidden="true">✦</span><div><strong>${tier}</strong><small>${detail}</small></div>`;
+        verdict.innerHTML = `<span class="benchmark-verdict-brand" aria-hidden="true"><img src="assets/lxultra-mark.png" alt=""></span><div class="benchmark-verdict-copy"><strong>${tier}</strong><small>${detail}</small></div>`;
       }
     }
   }

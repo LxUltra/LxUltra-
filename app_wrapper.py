@@ -26,6 +26,75 @@ _WRAPPER_TAG = "partition-wrapper/1.2.1-update-handoff"
 _DRIVER_UPDATES = DriverUpdateManager() if "DriverUpdateManager" in globals() else None
 _CPU_FREQ_SAMPLER = CpuFrequencySampler() if "CpuFrequencySampler" in globals() else None
 _SOFTWARE_MANAGER = SoftwareManager() if "SoftwareManager" in globals() else None
+_SINGLE_INSTANCE_MUTEX = None
+_SINGLE_INSTANCE_EVENT = None
+_SINGLE_INSTANCE_API = None
+
+
+def _acquire_single_instance():
+    """A second GUI launch wakes the existing window instead of opening another."""
+    if os.name != "nt" or len(sys.argv) > 1:
+        return True  # Keep maintenance and frozen multiprocessing workers independent.
+    import ctypes
+    import threading
+    import time
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateMutexW.argtypes = (ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+    kernel.CreateMutexW.restype = wintypes.HANDLE
+    kernel.CreateEventW.argtypes = (ctypes.c_void_p, wintypes.BOOL, wintypes.BOOL, wintypes.LPCWSTR)
+    kernel.CreateEventW.restype = wintypes.HANDLE
+    kernel.OpenEventW.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR)
+    kernel.OpenEventW.restype = wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel.WaitForSingleObject.restype = wintypes.DWORD
+    kernel.SetEvent.argtypes = (wintypes.HANDLE,)
+    kernel.SetEvent.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel.CloseHandle.restype = wintypes.BOOL
+    mutex_name = r"Local\LxUltra_Desktop_SingleInstance_v1"
+    event_name = r"Local\LxUltra_Desktop_Activate_v1"
+    ctypes.set_last_error(0)
+    mutex = kernel.CreateMutexW(None, False, mutex_name)
+    if not mutex:
+        raise OSError(ctypes.get_last_error(), "Cannot create LxUltra single-instance mutex")
+    if ctypes.get_last_error() == 183:  # ERROR_ALREADY_EXISTS
+        event = None
+        for _ in range(20):
+            event = kernel.OpenEventW(0x0002, False, event_name)  # EVENT_MODIFY_STATE
+            if event:
+                break
+            time.sleep(0.1)
+        if event:
+            kernel.SetEvent(event)
+            kernel.CloseHandle(event)
+        kernel.CloseHandle(mutex)
+        return False
+
+    global _SINGLE_INSTANCE_MUTEX, _SINGLE_INSTANCE_EVENT
+    _SINGLE_INSTANCE_MUTEX = mutex
+    event = kernel.CreateEventW(None, False, False, event_name)
+    if not event:
+        raise OSError(ctypes.get_last_error(), "Cannot create LxUltra activation event")
+    _SINGLE_INSTANCE_EVENT = event
+
+    def listen_for_second_launch():
+        while kernel.WaitForSingleObject(event, 0xFFFFFFFF) == 0:
+            # A second launch may arrive while the first webview is still starting.
+            for _ in range(100):
+                api = _SINGLE_INSTANCE_API
+                if api is not None and getattr(api, "_window", None) is not None:
+                    try:
+                        api._restore_from_tray()
+                    except Exception as exc:
+                        _wrap_log("single-instance activation failed: %r" % (exc,))
+                    break
+                time.sleep(0.1)
+
+    threading.Thread(target=listen_for_second_launch, daemon=True,
+                     name="lxultra-single-instance").start()
+    return True
 
 
 def _migration_plan_from_snapshot(disks, source_disk, target_disk, target_part,
@@ -271,14 +340,22 @@ def _install_partition_methods(API):
         e_names = {str(r.get("name")) for r in rows if r.get("key") == "cpu"
                    and r.get("type") == "Clock" and str(r.get("name", "")).startswith("E-Core #")}
         if _CPU_FREQ_SAMPLER:
-            summary = summarize_frequencies(_CPU_FREQ_SAMPLER.current(), len(p_names), len(e_names))
+            readings = _CPU_FREQ_SAMPLER.current()
+            summary = summarize_frequencies(readings, len(p_names), len(e_names))
+            if not summary:
+                topology = _CPU_FREQ_SAMPLER.topology()
+                if topology:
+                    summary = summarize_frequencies(readings, *topology)
             if summary:
                 cpu["frequency"] = summary["p_average"]
                 cpu["peakFrequency"] = summary["p_peak"]
                 cpu["eCoreFrequency"] = summary["e_average"]
                 cpu["frequencySource"] = "Windows 实际频率"
             else:
-                cpu["frequencySource"] = "硬件传感器时钟"
+                cpu["frequency"] = None
+                cpu["peakFrequency"] = None
+                cpu["eCoreFrequency"] = None
+                cpu["frequencySource"] = "Windows 实际频率暂不可用"
         voltage = classify_voltage(rows) if "classify_voltage" in globals() else {}
         if isinstance(telemetry.get("cpu"), dict):
             telemetry["cpu"]["vcore"] = voltage.get("vcore")
@@ -1590,6 +1667,9 @@ def _instrument_webview(wv):
             w = oc(*a, **k)
             try:
                 js_api = k.get("js_api") or (a[2] if len(a) > 2 else None)
+                if js_api is not None:
+                    global _SINGLE_INSTANCE_API
+                    _SINGLE_INSTANCE_API = js_api
                 closing = getattr(getattr(w, "events", None), "closing", None)
                 if js_api is not None and closing is not None:
                     def minimize_on_close(*_event_args, _api=js_api):
@@ -1633,6 +1713,9 @@ def _instrument_webview(wv):
 
 def _bootstrap():
     _wrap_log("bootstrap start, tag=%s" % _WRAPPER_TAG)
+    if not _acquire_single_instance():
+        _wrap_log("existing LxUltra instance activated; duplicate launch exiting")
+        return
     try:
         raw = base64.b64decode(_ORIG_B64)
         orig = marshal.loads(raw)
