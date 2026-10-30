@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LxUltra 分区与文件界面复测验收</title>
+<style>
+:root{font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;color:#202226;background:#f5f6f8;line-height:1.65}
+body{max-width:1080px;margin:28px auto;padding:0 20px}
+h1{font-size:26px;margin:0 0 4px}h2{font-size:19px;margin:28px 0 10px}
+.muted{color:#616771}.card{background:#fff;border:1px solid #d9dce1;border-radius:14px;padding:18px 20px;margin:14px 0}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 10px;border-bottom:1px solid #e5e7ea;vertical-align:top}
+th{color:#616771;font-weight:600}.pass{color:#2f7654;font-weight:700}.pending{color:#875b12;font-weight:700}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;background:#e8f2ea;color:#285c3b;font-size:12px}
+img{display:block;width:100%;height:auto;border:1px solid #d9dce1;border-radius:10px;margin:12px 0}
+code{background:#f3f4f6;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<h1>LxUltra 分区与文件界面复测验收</h1>
+<div class="muted">复测日期：2026-10-28　|　版本：本轮重设计与修复</div>
+
+<section class="card">
+<h2 style="margin-top:0">变更摘要</h2>
+<ul>
+  <li>分区工作区采用工具栏、分区表、按比例显示的磁盘图和右侧操作区布局，保留 LxUltra 主题。</li>
+  <li>分区工具栏、文件主标签和子标签统一为图三的矩形按钮样式：选中项深棕底白字，普通项浅灰底细边框。</li>
+  <li>修复悬停时按钮上移造成的跳动；悬停前后按钮位置保持不变。</li>
+  <li>“系统修复”和“网络修复”合并为单一“电脑修复”导航入口，两个功能面板均保留。</li>
+  <li>“常用软件缓存”默认不勾选，扫描和清理前需要用户主动选择。</li>
+</ul>
+</section>
+
+<h2>自动化验收</h2>
+<section class="card">
+<table>
+<thead><tr><th>范围</th><th>结果</th><th>覆盖内容</th></tr></thead>
+<tbody>
+<tr><td>分区界面</td><td class="pass">39 / 39 通过</td><td>表格与磁盘图联动、工具栏、队列撤销/重做、弹窗取消、模拟提交、刷新压力、快速选择、窄屏布局。</td></tr>
+<tr><td>文件界面与导航</td><td class="pass">16 / 16 通过</td><td>按钮样式与主界面按钮逐项比对、悬停不位移、缓存默认关闭、电脑修复双面板打开。</td></tr>
+<tr><td>后端安全回归</td><td class="pass">20 / 20 通过</td><td>系统盘擦除、EFI 删除、系统卷格式化/改标签及系统盘 MBR 操作均被拒绝。</td></tr>
+<tr><td>后端契约</td><td class="pass">5 / 5 通过</td><td>克隆必须确认目标；拒绝同源目标；卷标操作必须指定有效磁盘。</td></tr>
+<tr><td>并发与稳定性</td><td class="pass">13 / 13 通过</td><td>40 次磁盘枚举、8 线程并发 40 次、非法/边界输入；无异常、无明显句柄或内存增长。</td></tr>
+<tr><td>临时 VHDX 写入验收</td><td class="pass">50 项通过</td><td>格式化、卷标、盘符、扩缩容、检查、整理、测速、分区操作、GPT/MBR、擦除、挂载/卸载和克隆；仅操作本轮临时 VHDX。</td></tr>
+<tr><td>语法与构建</td><td class="pass">通过</td><td>JavaScript 语法检查、Python 编译检查；Python 3.11 构建器自检通过，归档保留 15 个条目。</td></tr>
+</tbody>
+</table>
+</section>
+
+<h2>界面留证</h2>
+<section class="card">
+<p>分区工具栏与磁盘图：</p>
+<img src="shots/05_final.png" alt="分区助手布局与工具栏">
+<p>文件页按钮统一样式：</p>
+<img src="shots/10_file_tabs_style.png" alt="文件主标签和子标签按钮样式">
+</section>
+
+<h2>安装与限制</h2>
+<section class="card">
+<p>已部署到 <code>D:\LxUltra\LxUltra.exe</code> 和 <code>D:\LxUltra\_internal</code> 的五个前端资源文件；安装文件与源码产物 SHA-256 一致。原安装文件保存在 <code>D:\Codex\LxUltra-PartitionAssistant\_backup_redesign_20261028\installed</code>。</p>
+<p>本轮未向真实物理磁盘提交写操作。系统盘、EFI/MSR/恢复分区仍由前后端双重保护。克隆功能是非系统数据卷的文件级镜像，并会清除目标卷原有文件，不会生成可启动系统克隆。</p>
+<p class="pending">安装版桌面现场截图核验未完成：Windows 界面控制器返回旧窗口句柄 <code>857812</code> 已失效，刷新后仍无法读取窗口状态。浏览器端实际资源回归与安装资源哈希校验均通过；启动安装版时可直接复核最终界面。</p>
+</section>
+</body>
+</html>

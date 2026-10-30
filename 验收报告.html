@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LxUltra 电脑管家 · 分区助手 验收报告</title>
+<style>
+:root{--bg:#F5F6F8;--panel:#fff;--panel2:#F3F4F6;--line:#D9DCE1;--text:#202226;--muted:#616771;--accent:#8A641F;--good:#2F7654;--bad:#B4444B;--amber:#875B12}
+*{box-sizing:border-box}
+body{margin:0;padding:32px 20px 64px;background:var(--bg);color:var(--text);font-family:"Segoe UI","Microsoft YaHei UI",sans-serif;font-size:14px;line-height:1.7}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:24px;margin:0 0 6px}
+.sub{color:var(--muted);font-size:13px;margin-bottom:24px}
+h2{font-size:17px;margin:30px 0 10px;padding-left:10px;border-left:4px solid var(--accent)}
+h3{font-size:14px;margin:18px 0 8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:var(--panel2);color:var(--muted);font-weight:600;white-space:nowrap}
+code{background:var(--panel2);padding:1px 6px;border-radius:6px;font-size:12.5px}
+.tag{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;border:1px solid var(--line);margin-right:4px}
+.ok{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,var(--line))}
+.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.warn{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,var(--line))}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.metric{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.metric strong{display:block;font-size:20px;margin-bottom:2px}
+.metric span{color:var(--muted);font-size:12px}
+ul{margin:6px 0 6px 20px;padding:0}
+li{margin:3px 0}
+.note{color:var(--muted);font-size:12.5px}
+.evidence img{max-width:100%;border:1px solid var(--line);border-radius:10px;margin:8px 0}
+</style>
+</head>
+<body><div class="wrap">
+<h1>分区助手 · 验收报告</h1>
+<div class="sub">目标:LxUltra 电脑管家（v1.0.29 → 带分区助手）· 验收标准:《Win11软件验收》六阶段 · 执行时间:2026-10-28 07:30–08:00</div>
+
+<div class="card">
+<h2 style="margin-top:0">结论摘要</h2>
+<div class="grid">
+  <div class="metric"><strong style="color:var(--good)">57 / 57</strong><span>自动化用例全部通过（后端 18 + UI 26 + 压力 13）</span></div>
+  <div class="metric"><strong>0</strong><span>UI console 错误 / 4xx 响应</span></div>
+  <div class="metric"><strong>-70%</strong><span>磁盘读取耗时优化（5.08s → 1.54s）</span></div>
+  <div class="metric"><strong>0</strong><span>句柄/内存泄漏（40 次长跑 + 8 线程并发）</span></div>
+</div>
+<p style="margin:12px 0 0"><span class="tag ok">功能完成</span><span class="tag ok">启动验证通过</span><span class="tag warn">克隆硬盘为安全停用（见残留风险）</span></p>
+</div>
+
+<h2>阶段一 · 静态审查（只读）</h2>
+<div class="card">
+<h3>1.1 既有架构盘点</h3>
+<table>
+<tr><th>项目</th><th>结论</th></tr>
+<tr><td>宿主应用</td><td><code>D:\LxUltra\LxUltra.exe</code>，PyInstaller onedir + pywebview(edgechromium)，Python 3.11，共 15 个归档条目</td></tr>
+<tr><td>前端</td><td><code>D:\LxUltra\_internal\index.html</code> + 12 个 <code>*_ui.js</code> 模块；导航为 <code>data-pane</code> 通用点击 → <code>showPane()</code></td></tr>
+<tr><td>后端</td><td>编译在 exe 内（<code>app</code> 模块 154KB 字节码），暴露 <code>API</code> 类共 <b>110 个</b>方法；JS 经 <code>window.pywebview.api.X()</code> 调用</td></tr>
+<tr><td>扩展可行性</td><td>无通用命令执行器；无开发工程副本；无 GitHub 地址 → 采用「归档内主脚本替换 + monkey-patch 注入」方案，不动原字节码</td></tr>
+</table>
+
+<h3>1.2 缺陷清单（本次新增代码，按级别）</h3>
+<table>
+<tr><th>级别</th><th>位置</th><th>问题</th><th>触发条件</th><th>修复</th><th>状态</th></tr>
+<tr><td><span class="tag bad">Critical</span></td><td>app_wrapper.py <code>ns['__name__']</code></td><td>注入命名空间用了 <code>'app_orig'</code>，而原模块尾部有 <code>if __name__=='__main__'</code> 守卫 → main() 永不执行，进程秒退（退出码 0、无窗口）</td><td>任何启动</td><td>改为 <code>'__main__'</code>，与原行为一致</td><td>已修/已验证</td></tr>
+<tr><td><span class="tag bad">Critical</span></td><td>build_patched.py</td><td>重建归档时漏写原 exe 的 PE 头 + bootloader 前缀 → "不是有效应用程序"</td><td>任意构建</td><td>保留 <code>data[:archive_start]</code> 前缀，并加 MZ / archive_start 双重自校验</td><td>已修/已验证</td></tr>
+<tr><td><span class="tag bad">Critical</span></td><td>app_wrapper.py <code>_protected_partition</code></td><td>系统盘上的 启动/系统/EFI/MSR/恢复 分区缺少分区级守卫，仅盘级拦截</td><td>对系统盘保护分区执行删除/格式化/改盘符</td><td>新增实时 PS 查询分区标志，命中即拒绝</td><td>已修/已测</td></tr>
+<tr><td><span class="tag warn">Major</span></td><td>partition_ui.js <code>openModal()</code></td><td>返回 undefined，但调用处写成 <code>openModal(...).then(...)</code> → 所有弹窗确认回调失效（<code>reading 'then'</code>）</td><td>任意弹窗确认</td><td><code>openModal</code> 返回 Promise 并自动接线按钮</td><td>已修/已测</td></tr>
+<tr><td><span class="tag warn">Major</span></td><td>app_wrapper.py <code>_op_guard</code></td><td>对 <code>benchmark/scan/defrag/set_label/vhd_*</code> 强制要求 disk 字段 → 全部被误拒（"缺少有效的磁盘编号"）</td><td>测速/检查/整理/改卷标/VHD</td><td>按 <code>_DISKLESS_OPS</code> 分类校验</td><td>已修/已测</td></tr>
+<tr><td><span class="tag warn">Major</span></td><td>app_wrapper.py <code>partition_job_submit</code></td><td>非法操作（缺字段/未知类型）仍创建任务，只在执行期报错</td><td>非法入参</td><td>新增 <code>_validate_op</code> 前置校验，逐项报错并拒绝建单</td><td>已修/已测</td></tr>
+<tr><td><span class="tag">Minor</span></td><td>app_wrapper.py <code>_wrap_log</code></td><td>引用未导入的 <code>tempfile</code>，异常被静默吞掉 → 日志全丢，排障失明</td><td>首次写日志</td><td>改用 LOCALAPPDATA/TEMP 并导入 tempfile；顶层加 traceback 落盘</td><td>已修</td></tr>
+<tr><td><span class="tag">Minor</span></td><td>partition_ui.js 结果区</td><td>执行结果显示 "测试 undefined"（结果对象只有 type，无盘符上下文）</td><td>任务完成渲染</td><td>后端结果回带 <code>op</code>，前端 <code>opLabel(r.op||…)</code></td><td>已修/已测</td></tr>
+<tr><td><span class="tag">Nit</span></td><td>partition_ui.js</td><td><code>dialogResolve</code> 死代码</td><td>—</td><td>删除</td><td>已清</td></tr>
+</table>
+</div>
+
+<h2>阶段二 · 构建与单元测试</h2>
+<div class="card">
+<h3>2.1 构建（一条命令）</h3>
+<p class="note">命令：<code>python build_patched.py</code>（必须 Python 3.11，与运行时一致）</p>
+<table>
+<tr><th>检查</th><th>结果</th></tr>
+<tr><td>归档条目</td><td>15 → 15，全部保留（struct / pyimod01-04 / 6 个 rth / app / pyi-contents-directory / PYZ.pyz）</td></tr>
+<tr><td>PE 头 + bootloader 前缀</td><td><span class="tag ok">MZ 校验通过</span> prefix=371200 字节</td></tr>
+<tr><td>内嵌原字节码完整性</td><td><span class="tag ok">可 base64 解码并 marshal.loads 成功</span></td></tr>
+<tr><td>产物</td><td><code>LxUltra_patched.exe</code> 6,571,236 B（原版 6,531,206 B，已备份）</td></tr>
+<tr><td>零编译警告</td><td><span class="tag ok">Python 编译无 warning；JS <code>node --check</code> 通过</span></td></tr>
+</table>
+<h3>2.2 单元测试</h3>
+<table>
+<tr><th>用例集</th><th>数量</th><th>结果</th></tr>
+<tr><td>包装器注入机制（玩具模块：API 注入 / 原方法完好 / 6 个方法挂载）</td><td>7</td><td><span class="tag ok">7/7</span></td></tr>
+<tr><td>后端只读冒烟（真实 PowerShell：3 磁盘 / 22 分区 / EFI 识别 / 管理员判定）</td><td>8</td><td><span class="tag ok">8/8</span></td></tr>
+<tr><td>安全守卫（系统盘 wipe / 删 EFI / 格式化 / 空列表）</td><td>3</td><td><span class="tag ok">3/3</span></td></tr>
+<tr><td><b>合计</b></td><td><b>18</b></td><td><span class="tag ok">18/18</span></td></tr>
+</table>
+<h3>2.3 真机启动验证（端到端）</h3>
+<p class="note">启动日志（<code>%LOCALAPPDATA%\LxUltra\partition_wrapper.log</code>）逐级确认：</p>
+<ul>
+<li>module import → meipass=<code>D:\LxUltra\_internal</code>、frozen=True</li>
+<li>bootstrap start → executing original module（ROOT 正确）</li>
+<li><span class="tag ok">partition methods installed on API</span> 6 个方法</li>
+<li>main() entered → _run_window() entered → create_window(js_api=…) → webview.start()</li>
+<li>进程持续存活（PID 存活、窗口标题 LxUltra、常驻内存 214MB）</li>
+</ul>
+</div>
+
+<h2>阶段三 · 压力与负载测试</h2>
+<div class="card">
+<h3>3.1 后端（真实 PowerShell）</h3>
+<table>
+<tr><th>场景</th><th>方法</th><th>原始数据</th><th>结论</th></tr>
+<tr><td>顺序长跑</td><td>40 次 <code>partition_disks</code></td><td>p50 <b>1.57s</b> / p95 <b>1.83s</b> / max 1.93s；句柄 172→188；RSS 22.0→23.9MB</td><td><span class="tag ok">通过，无泄漏</span></td></tr>
+<tr><td>并发风暴</td><td>8 线程 × 5 次</td><td>40/40 成功、异常 0；句柄 196→196；RSS +0.4MB；总耗时 62.7s（锁串行化，40×1.57s）</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>非法/边界输入</td><td>7 类（空列表/非列表/缺盘号/未知任务/非法盘号/字符串盘号/未知操作）</td><td>全部被安全拒绝，无异常抛出</td><td><span class="tag ok">通过</span></td></tr>
+</table>
+<p class="note">说明：<code>partition_disks</code> 内部持锁串行，避免 8 个并发 PowerShell 进程风暴；并发下总时长约等于串行，属于**设计内行为**，非性能退化。</p>
+
+<h3>3.2 前端 UI（Playwright + Edge 内核，真实前端 + 真实后端）</h3>
+<table>
+<tr><th>场景</th><th>原始数据</th><th>结论</th></tr>
+<tr><td>首屏加载</td><td>25 行表格（3 磁盘 / 22 分区）、22 个可视化块</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>执行链路</td><td>选 D: → 测速入队 → 提交 → 2.0s 完成 → <b>写入 192.5 MB/s · 读取 2407.6 MB/s</b></td><td><span class="tag ok">通过（真实落地）</span></td></tr>
+<tr><td>刷新风暴</td><td>20 次连点刷新 4.5s；实际后端调用 3 次（15s 缓存 + 节流生效）</td><td><span class="tag ok">通过，无卡顿</span></td></tr>
+<tr><td>选择风暴</td><td>60 次连续快速选中 500ms 内，无异常</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>冷启动重载</td><td>1.87s 完成渲染</td><td><span class="tag ok">通过</span></td></tr>
+<tr><td>Console / 网络</td><td>错误 0；4xx/5xx 0</td><td><span class="tag ok">通过</span></td></tr>
+</table>
+</div>
+
+<h2>阶段四 · 性能优化（有前后对比数据）</h2>
+<div class="card">
+<table>
+<tr><th>优化项</th><th>改前</th><th>改后</th><th>手法</th><th>证据</th></tr>
+<tr><td>磁盘列表读取</td><td><b>5.08s</b></td><td><b>1.54s</b>（-70%）</td><td>① 每分区一次 <code>Get-Volume</code>（N 次查询，含慢速 WMI）→ 改为全局 <code>Get-Volume</code> 一次建 DriveLetter 哈希；② 每盘 <code>Get-StorageReliabilityCounter</code>（SMART，约 1.5s/盘）从列表剥离，改由 <code>partition_health</code> 按需查询</td><td>同一台机、同一数据（3 盘 22 分区）实测</td></tr>
+<tr><td>刷新请求量</td><td>每次刷新都打后端</td><td>20 次连点仅 3 次后端调用</td><td>前端 15s 结果缓存 + <code>S.loading</code> 并发去抖</td><td>UI 压测原始日志</td></tr>
+<tr><td>右键/弹窗应答</td><td>确认回调全失效（抛异常）</td><td>即时响应</td><td>openModal 返回 Promise</td><td>UI 用例 26/26</td></tr>
+</table>
+<p class="note">优化原则遵循：先正确后性能；每项均有改前/改后数据；未牺牲可读性。</p>
+</div>
+
+<h2>阶段五 · 功能实现清单</h2>
+<div class="card">
+<table>
+<tr><th>区域</th><th>能力</th><th>后端 API</th><th>实测</th></tr>
+<tr><td>工具栏</td><td>提交 / 克隆(硬盘·分区) / 转换(GPT·MBR) / 恢复(重建MBR·检查修复) / 擦除 / 测试(测速·健康) / 工具(整理·刷新·复制信息) / 虚拟机管理(VHD)</td><td><code>partition_job_submit</code></td><td>提交链路已实测</td></tr>
+<tr><td>分区表</td><td>名称 / 文件系统 / 容量 / 已使用(百分比) / 分区类型 / 状态(系统·启动·隐藏) / 对齐</td><td><code>partition_disks</code></td><td><span class="tag ok">实测 25 行</span></td></tr>
+<tr><td>磁盘可视化</td><td>每盘容量条 + 按比例分区块（系统/数据/元数据/未分配四色）+ 盘符卷标 + 已用/容量</td><td>同上</td><td><span class="tag ok">22 块</span></td></tr>
+<tr><td>右侧面板</td><td>属性(型号/序列号/总线/容量/分区表/状态) + 健康(SMART 温度/通电/磨损/错误) + 磁盘操作 + 分区操作</td><td><code>partition_health</code></td><td><span class="tag ok">实测</span></td></tr>
+<tr><td>执行模型</td><td>AOMEI 式「待执行队列 → 提交」：可逐项移除、提交前二次确认、异步任务 + 进度条 + 逐条结果</td><td><code>partition_job_submit/status</code></td><td><span class="tag ok">实测</span></td></tr>
+<tr><td>安全护栏</td><td>系统盘禁用 删除全部/擦除/快速分区/转换/克隆目标；系统盘保护分区禁用 删除/格式化/改盘符；擦除需输入 ERASE、删全部需输入 DELETE；非管理员破坏性操作直接拒绝</td><td>前后端双重</td><td><span class="tag ok">后端 3 项守卫用例通过</span></td></tr>
+</table>
+</div>
+
+<h2>阶段六 · 回归与残留风险</h2>
+<div class="card">
+<h3>6.1 回归结果</h3>
+<ul>
+<li>后端单元测试：<span class="tag ok">18/18</span>　UI 端到端：<span class="tag ok">26/26</span>　压力与泄漏：<span class="tag ok">13/13</span></li>
+<li>最终 exe 重建后再次全量回归：<span class="tag ok">全部通过，零回归</span></li>
+<li>JS 语法 <code>node --check</code>：通过；index.html 6 处改动全部校验命中</li>
+</ul>
+<h3>6.2 残留风险（明确标注）</h3>
+<table>
+<tr><th>风险</th><th>说明</th><th>处置</th></tr>
+<tr><td><span class="tag warn">破坏性操作未做真机实测</span></td><td>删除分区 / 删除所有分区 / 擦除 / 快速分区 / 转换分区表 —— 不可逆，验收中<b>刻意未对真实磁盘执行</b>（仅验证代码路径、参数构造与守卫）</td><td>首次使用请在无数据磁盘或已备份磁盘上验证；建议逐步：先试「快速分区」于空盘</td></tr>
+<tr><td><span class="tag warn">克隆硬盘/克隆分区安全停用</span></td><td>文件级克隆需专用引擎，当前直接返回「实验功能停用」，避免误操作</td><td>如需启用，后续单独开发 + 独立验收</td></tr>
+<tr><td><span class="tag">应用更新会覆盖前端</span></td><td>分区助手前端位于 <code>_internal\inventory</code>（index.html / partition_ui.js / partition_ui.css），应用内「检查更新」若覆盖 _internal 会丢失</td><td>原版与改版均已备份在 <code>D:\Codex\LxUltra-PartitionAssistant\_backup_original</code>，重跑 <code>build_patched.py</code> + 复制前端即可恢复；建议更新前备份 _internal</td></tr>
+<tr><td><span class="tag">GUI 进程不可被代理长驻</span></td><td>代理沙箱会回收其派生的 GUI 子进程，验收时通过「启动日志 + 进程存活判定」证明可用</td><td>日常请双击桌面「LxUltra电脑管家」启动</td></tr>
+<tr><td><span class="tag">需管理员权限</span></td><td>破坏性操作要求管理员；非管理员时按钮可点但后端返回明确拒绝</td><td>右键以管理员身份运行，或确认应用自身提权</td></tr>
+</table>
+<h3>6.3 交付物</h3>
+<ul>
+<li><code>D:\Codex\LxUltra-PartitionAssistant\app_wrapper.py</code> — 后端包装器（含分区方法）</li>
+<li><code>...\build_patched.py</code> — 归档重写器（一键构建）</li>
+<li><code>...\partition_ui.js / partition_ui.css</code> — 前端模块</li>
+<li><code>...\test_wrapper.py / stress_test.py / ui_test.py</code> — 三套测试</li>
+<li><code>...\_backup_original\</code> — 原始 exe 与 index.html 备份</li>
+<li><code>...\shots\</code> — 6 张验收截图</li>
+</ul>
+</div>
+
+<h2>证据截图</h2>
+<div class="card evidence">
+<p class="note">全部截图保存在 <code>D:\Codex\LxUltra-PartitionAssistant\shots\</code></p>
+<ul>
+<li>01_partition_list.png — 分区列表 + 三盘可视化 + 右侧属性/操作（系统盘高危项置灰）</li>
+<li>02_format_dialog.png — 格式化确认弹窗</li>
+<li>06_queue_bench.png — 待执行队列（测速入队）</li>
+<li>07_submit_confirm.png — 提交二次确认</li>
+<li>08_exec_result.png — 执行结果：写入 192.5 MB/s · 读取 2407.6 MB/s</li>
+<li>05_final.png — 冷启动重载后最终界面</li>
+</ul>
+</div>
+
+<p class="note" style="margin-top:24px">报告生成时间：2026-10-28 · 验收标准来源：腾讯文档《Win11软件验收》六阶段流程（静态审查 → 构建单测 → 压力负载 → 性能优化 → 缺陷修复 → 回归收尾）</p>
+</div></body></html>

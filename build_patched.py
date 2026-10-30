@@ -140,7 +140,8 @@ def main():
                 "partition_job_submit", "partition_migration_plan", "_WindowsMigrationAdapter",
                 "fm_software_move", "storage_ai_exclusions_list",
                 "storage_ai_exclusions_add", "storage_ai_exclusions_remove",
-                "filter_storage_status", "_ai_protected_directory"):
+                "filter_storage_status", "_ai_protected_directory",
+                "process_background_windows", "_allow_verified_update_exit"):
         assert sym in names or sym in str(code2.co_consts), "missing symbol %s" % sym
     # 原模块字节码仍内嵌可解码
     consts = [c for c in code2.co_consts if isinstance(c, str) and len(c) > 100000]

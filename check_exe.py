@@ -6,6 +6,8 @@ import sys
 import types
 import zlib
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 MAGIC = b"MEI\014\013\012\013\016"
 
 
@@ -46,6 +48,7 @@ def names(co, out):
             out.add(c)
 
 
+failed = False
 for exe in sys.argv[1:]:
     print("=" * 70)
     print(exe)
@@ -59,7 +62,14 @@ for exe in sys.argv[1:]:
         print("  顶层模块: %s" % co.co_name)
         print("  partition_* 方法: %d 个 %s" % (len(has), has[:10]))
         print("  结论: %s" % ("包含分区助手后端 ✅" if has else "不含分区助手后端 ❌"))
+        if not has:
+            failed = True
     except SystemExit as e:
+        failed = True
         print("  失败:", e)
     except Exception as e:
+        failed = True
         print("  解析异常:", type(e).__name__, e)
+
+if __name__ == "__main__":
+    sys.exit(1 if failed else 0)

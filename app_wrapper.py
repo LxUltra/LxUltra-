@@ -22,7 +22,7 @@ import tempfile
 
 _ORIG_B64 = "@@ORIG_B64@@"
 
-_WRAPPER_TAG = "partition-wrapper/1.1.0-system-migration"
+_WRAPPER_TAG = "partition-wrapper/1.2.1-update-handoff"
 _DRIVER_UPDATES = DriverUpdateManager() if "DriverUpdateManager" in globals() else None
 _CPU_FREQ_SAMPLER = CpuFrequencySampler() if "CpuFrequencySampler" in globals() else None
 _SOFTWARE_MANAGER = SoftwareManager() if "SoftwareManager" in globals() else None
@@ -361,6 +361,48 @@ def _install_partition_methods(API):
                 for raw in raw_values:
                     result[raw] = icon
         return result
+
+    def process_background_windows(self):
+        """Return PIDs that own visible top-level windows for conservative suggestions."""
+        if os.name != "nt":
+            return {"ok": False, "error": "后台窗口识别仅支持 Windows", "visiblePids": []}
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+            visible_pids = set()
+            user32.IsWindowVisible.argtypes = (wintypes.HWND,)
+            user32.IsWindowVisible.restype = wintypes.BOOL
+            user32.GetWindowThreadProcessId.argtypes = (wintypes.HWND,
+                                                        ctypes.POINTER(wintypes.DWORD))
+            user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+
+            def visit(hwnd, _lparam):
+                try:
+                    if not user32.IsWindowVisible(hwnd):
+                        return True
+                    pid = wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    if pid.value:
+                        visible_pids.add(int(pid.value))
+                except Exception:
+                    pass
+                return True
+
+            callback = enum_proc(visit)
+            user32.EnumWindows.argtypes = (enum_proc, wintypes.LPARAM)
+            user32.EnumWindows.restype = wintypes.BOOL
+            if not user32.EnumWindows(callback, 0):
+                code = ctypes.get_last_error()
+                return {"ok": False, "error": "无法枚举可见窗口（Windows 错误 %s）" % code,
+                        "visiblePids": []}
+            return {"ok": True, "visiblePids": sorted(visible_pids)}
+        except Exception as e:
+            _wrap_log("visible process window scan failed: %r" % (e,))
+            return {"ok": False, "error": "无法可靠识别当前可见窗口", "visiblePids": []}
+
     import json
     import re
     import subprocess
@@ -1433,6 +1475,7 @@ foreach ($d in (Get-Disk -ErrorAction Stop)) {
         "fm_software_move": fm_software_move,
         "fm_software_icons": fm_software_icons,
         "process_icons": process_icons,
+        "process_background_windows": process_background_windows,
         "partition_disks": partition_disks,
         "partition_migration_plan": partition_migration_plan,
         "partition_health": partition_health,
@@ -1465,6 +1508,11 @@ class _BootstrapNS(dict):
             except Exception as e:
                 _wrap_log("install partition methods failed: %r" % e)
             try:
+                _allow_explicit_tray_exit(value)
+                _allow_verified_update_exit(value)
+            except Exception as e:
+                _wrap_log("install tray exit guard failed: %r" % e)
+            try:
                 _instrument_webview(self.get("webview"))
             except Exception as e:
                 _wrap_log("instrument webview failed: %r" % e)
@@ -1487,6 +1535,47 @@ def _trace_wrap(name, fn):
     return wrapper
 
 
+def _allow_explicit_tray_exit(api_cls):
+    """Let the tray menu's explicit Exit action close the window normally."""
+    original = getattr(api_cls, "_quit_from_tray", None)
+    if not callable(original) or getattr(original, "_lxultra_exit_wrapped", False):
+        return
+
+    def quit_from_tray(self, *args, **kwargs):
+        self._lxultra_exit_requested = True
+        return original(self, *args, **kwargs)
+
+    quit_from_tray._lxultra_exit_wrapped = True
+    api_cls._quit_from_tray = quit_from_tray
+
+
+def _allow_verified_update_exit(api_cls):
+    """Release the app only after the original verified installer launcher succeeds."""
+    original = getattr(api_cls, "_download_and_install_update", None)
+    if not callable(original) or getattr(original, "_lxultra_handoff_wrapped", False):
+        return
+
+    def download_and_install_update(self, *args, **kwargs):
+        result = original(self, *args, **kwargs)
+        with self._update_lock:
+            installing = self._update_state.get("state") == "installing"
+        if installing:
+            previous_exit = getattr(self, "_lxultra_exit_requested", False)
+            try:
+                # This goes through the explicit tray-exit path, bypassing close-to-tray.
+                self._quit_from_tray()
+            except Exception as error:
+                self._lxultra_exit_requested = previous_exit
+                with self._update_lock:
+                    self._update_state = dict(self._update_state, state="failed",
+                        message="安装程序已启动，但应用未能退出。请从托盘菜单退出 LxUltra 后继续安装。")
+                _wrap_log("verified update exit failed: %r" % (error,))
+        return result
+
+    download_and_install_update._lxultra_handoff_wrapped = True
+    api_cls._download_and_install_update = download_and_install_update
+
+
 def _instrument_webview(wv):
     """诊断插桩:记录 create_window / start 的调用与返回,便于定位窗口未启动的问题。"""
     if not wv or getattr(wv, "_lxultra_instrumented", False):
@@ -1499,6 +1588,28 @@ def _instrument_webview(wv):
         _wrap_log("create_window(a=%r kw=%r)" % (a[:3], list(k.keys())))
         try:
             w = oc(*a, **k)
+            try:
+                js_api = k.get("js_api") or (a[2] if len(a) > 2 else None)
+                closing = getattr(getattr(w, "events", None), "closing", None)
+                if js_api is not None and closing is not None:
+                    def minimize_on_close(*_event_args, _api=js_api):
+                        if getattr(_api, "_lxultra_exit_requested", False):
+                            return None
+                        try:
+                            result = _api.minimize_to_tray()
+                        except Exception as e:
+                            _wrap_log("close-to-tray failed: %r" % e)
+                            return None
+                        if isinstance(result, dict) and result.get("ok"):
+                            _wrap_log("window close redirected to system tray")
+                            return False
+                        _wrap_log("close-to-tray unavailable; allowing window to close: %r" % (result,))
+                        return None
+
+                    closing += minimize_on_close
+                    _wrap_log("registered window close-to-tray handler")
+            except Exception as e:
+                _wrap_log("register close-to-tray handler failed: %r" % e)
             _wrap_log("create_window -> %r" % (w,))
             return w
         except BaseException as e:
