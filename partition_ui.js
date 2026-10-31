@@ -125,6 +125,12 @@
     });
     h += '</div><div class="pt-ribbon-trailing"><button type="button" class="pt-refresh" data-act="op-refresh" title="重新读取磁盘信息">⟳ <span>刷新</span></button></div></div>';
     if (clonePick) h += '<div class="pt-clone-prompt" role="status">已锁定源' + (clonePick.kind === 'disk' ? '硬盘 ' + clonePick.disk : '分区 ' + esc(clonePick.letter + ':')) + '，请在磁盘图或表格中点击目标' + (clonePick.kind === 'disk' ? '硬盘' : '分区') + '。<button type="button" class="btn" data-act="cancel-clone">取消选择</button></div>';
+    var pickedDisk = curDisk(), pickedPart = curPart();
+    var selection = pickedDisk
+      ? '当前选择：硬盘 ' + pickedDisk.number + ' · ' + esc(pickedDisk.name || '磁盘') +
+        (pickedPart ? ' / 分区 ' + pickedPart.number + ' · ' + esc((pickedPart.letter ? pickedPart.letter + ': ' : '') + (pickedPart.label || pickedPart.typeName || '')) : '（整盘）')
+      : '请选择磁盘或分区，再选择操作。';
+    h += '<div class="pt-selection-context" role="status">' + selection + '</div>';
     host.innerHTML = h;
   }
 

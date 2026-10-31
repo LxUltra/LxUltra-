@@ -22,6 +22,31 @@ def summarize_frequencies(readings, p_cores, e_cores):
             "e_average": round(sum(e) / len(e)) if e else None}
 
 
+def infer_hybrid_topology(physical_cores, logical_threads):
+    """P cores have two threads, E cores one; reject non-hybrid counts."""
+    physical, logical = int(physical_cores or 0), int(logical_threads or 0)
+    p_cores = logical - physical
+    e_cores = physical - p_cores
+    return (p_cores, e_cores) if p_cores > 0 and e_cores > 0 else None
+
+
+def read_processor_topology():
+    script = ("$c=@(Get-CimInstance Win32_Processor); "
+              "@($c | ForEach-Object {@{physical=$_.NumberOfCores;logical=$_.NumberOfLogicalProcessors}}) "
+              "| ConvertTo-Json -Compress")
+    completed = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+                               capture_output=True, encoding="utf-8", errors="replace", timeout=12,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    if completed.returncode:
+        return None
+    rows = json.loads(completed.stdout)
+    if not isinstance(rows, list):
+        rows = [rows]
+    if len(rows) != 1:
+        return None
+    return infer_hybrid_topology(rows[0].get("physical"), rows[0].get("logical"))
+
+
 def classify_voltage(rows):
     vcore, vid = None, None
     for row in rows or []:
@@ -60,6 +85,11 @@ class CpuFrequencySampler:
         self._readings = {}
         self._read_at = 0
         self._thread = None
+        self._topology = None
+
+    def topology(self):
+        with self._lock:
+            return self._topology
 
     def current(self):
         with self._lock:
@@ -71,9 +101,17 @@ class CpuFrequencySampler:
     def _read(self):
         try:
             data = read_actual_frequencies()
+            if self._topology is None:
+                try:
+                    topology = read_processor_topology()
+                except Exception:
+                    topology = None
+            else:
+                topology = self._topology
             with self._lock:
                 self._readings = data
                 self._read_at = time.monotonic()
+                self._topology = topology
             time.sleep(3)
         except Exception:
             time.sleep(10)

@@ -25,7 +25,7 @@ const rows = [
 ];
 const result = normalize(rows, [103]);
 assert.deepEqual(Array.from(result.items, item => item.pid), [101, 102]);
-assert.equal(result.items.every(item => item.selected === true), true, 'suggestions are selected so the acceleration action is available');
+assert.equal(result.items.every(item => item.selected === false), true, 'scan suggestions require an explicit selection before acceleration');
 assert.equal(result.skipped, 2, 'malformed records are skipped without stopping the scan');
 assert.equal(result.protected, 2, 'protected rows and all LxUltra instances are never recommended');
 assert.equal(result.visible, 2, 'visible-window rows and their same-executable helpers are never recommended');

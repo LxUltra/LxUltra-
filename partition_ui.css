@@ -161,3 +161,11 @@ table.pt-table tr.pt-part-row.sel td{background:color-mix(in srgb,var(--accent) 
 .pt-menu:nth-last-child(-n+2) .pt-menu-pop{left:auto;right:0}
 
 .pt-clone-prompt{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0;padding:10px 14px;border:1px solid var(--accent);border-radius:var(--control-radius);background:var(--panel);color:var(--text)}
+
+/* Keep the disk workspace on the page's single vertical scroll. */
+.pt-table-wrap{max-height:none;overflow-x:auto;overflow-y:visible}
+.pt-disks{max-height:none;overflow:visible}
+.pt-side-pane{max-height:none;overflow:visible}
+table.pt-table{min-width:650px}
+.pt-selection-context{padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel);font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+@media(max-width:1280px){.pt-map-row{grid-template-columns:112px minmax(0,1fr)}.pt-map-disk strong{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.pt-map-track{min-height:84px}}

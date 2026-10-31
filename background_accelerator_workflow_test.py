@@ -46,12 +46,13 @@ class BackgroundAcceleratorWorkflowTest(unittest.TestCase):
     def open_widget(self):
         self.page.evaluate("document.body.classList.add('compact')")
         self.page.locator('#widget-accelerate').click()
-        expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 1 个')
+        expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 0 个')
 
     def test_widget_scan_and_cancel_confirmation(self):
         self.open_widget()
         expect(self.page.locator('#accelerator-process-status')).to_have_attribute('data-state', 'complete')
-        expect(self.page.locator('#accelerator-process-run')).to_be_enabled()
+        expect(self.page.locator('#accelerator-process-run')).to_be_disabled()
+        self.page.locator('#accelerator-process-list input').check()
         self.page.locator('#accelerator-process-run').click()
         expect(self.page.locator('#confirm-dialog')).to_be_visible()
         expect(self.page.locator('#confirm-message')).to_contain_text('test-background.exe')
@@ -59,33 +60,35 @@ class BackgroundAcceleratorWorkflowTest(unittest.TestCase):
         expect(self.page.locator('#accelerator-process-status')).to_contain_text('已取消')
         self.assertEqual(self.page.evaluate('window.testCalls.execute'), 0)
 
-    def test_heading_quick_action_is_clickable_and_reaches_confirmation(self):
+    def test_heading_scan_action_rescans_without_closing_programs(self):
         self.open_widget()
-        self.page.locator('#widget-action-content').get_by_role('button', name='一键加速', exact=True).click(timeout=1500)
-        expect(self.page.locator('#confirm-dialog')).to_be_visible()
+        self.page.locator('#widget-action-content').get_by_role('button', name='扫描可加速项', exact=True).click(timeout=1500)
+        expect(self.page.locator('#accelerator-process-status')).to_have_attribute('data-state', 'complete')
+        expect(self.page.locator('#confirm-dialog')).to_be_hidden()
         self.assertEqual(self.page.evaluate('window.testCalls.execute'), 0)
-        self.page.locator('#confirm-cancel').click()
 
     def test_unchecked_items_disable_acceleration(self):
         self.open_widget()
-        self.page.locator('#accelerator-process-clear').click()
         expect(self.page.locator('#accelerator-process-run')).to_be_disabled()
-        expect(self.page.locator('#accelerator-quick-start')).to_be_disabled()
+        expect(self.page.locator('#accelerator-quick-start')).to_be_enabled()
         self.page.locator('#accelerator-process-select-all').click()
         expect(self.page.locator('#accelerator-process-run')).to_be_enabled()
+        self.page.locator('#accelerator-process-clear').click()
+        expect(self.page.locator('#accelerator-process-run')).to_be_disabled()
 
     def test_main_panel_quick_action_scans_before_confirmation(self):
         self.page.evaluate("document.body.classList.remove('compact');showPane('accelerate')")
         self.page.locator('#accelerator-quick-start').click()
-        expect(self.page.locator('#confirm-dialog')).to_be_visible()
-        self.page.locator('#confirm-cancel').click()
+        expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 0 个')
+        expect(self.page.locator('#confirm-dialog')).to_be_hidden()
         self.assertEqual(self.page.evaluate('window.testCalls.execute'), 0)
 
     def test_program_management_uses_same_preview_and_cancel(self):
         self.page.evaluate("document.body.classList.remove('compact');showPane('programs')")
         self.page.locator('[data-program-view="processes"]').click()
         self.page.locator('#process-background-scan').click()
-        expect(self.page.locator('#process-background-summary')).to_contain_text('已勾选 1 个')
+        expect(self.page.locator('#process-background-summary')).to_contain_text('已勾选 0 个')
+        self.page.locator('#process-background-list input').check()
         self.page.locator('#process-background-run').click()
         expect(self.page.locator('#confirm-dialog')).to_be_visible()
         self.page.locator('#confirm-cancel').click()
@@ -94,7 +97,8 @@ class BackgroundAcceleratorWorkflowTest(unittest.TestCase):
 
     def test_confirm_executes_only_after_acceptance(self):
         self.open_widget()
-        self.page.locator('#accelerator-quick-start').click()
+        self.page.locator('#accelerator-process-list input').check()
+        self.page.locator('#accelerator-process-run').click()
         expect(self.page.locator('#confirm-dialog')).to_be_visible()
         self.assertEqual(self.page.evaluate('window.testCalls.execute'), 0)
         self.page.locator('#confirm-yes').click()
@@ -117,15 +121,17 @@ class BackgroundAcceleratorWorkflowTest(unittest.TestCase):
         expect(self.page.locator('#accelerator-process-scan')).to_be_enabled()
         expect(self.page.locator('#accelerator-process-run')).to_be_disabled()
         self.page.locator('#accelerator-process-scan').click()
-        expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 1 个')
+        expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 0 个')
+        expect(self.page.locator('#accelerator-process-run')).to_be_disabled()
+        self.page.locator('#accelerator-process-select-all').click()
         expect(self.page.locator('#accelerator-process-run')).to_be_enabled()
 
     def test_repeated_widget_open_scan_and_return_preserve_layout(self):
         self.page.evaluate("document.body.classList.add('compact')")
         for _ in range(20):
             self.page.locator('#widget-accelerate').click()
-            expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 1 个')
-            self.assertEqual(self.page.locator('#accelerator-process-list input:checked').count(), 1)
+            expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 0 个')
+            self.assertEqual(self.page.locator('#accelerator-process-list input:checked').count(), 0)
             self.page.locator('#widget-panel-close').click()
             expect(self.page.locator('#widget-action-overlay')).to_be_hidden()
             self.assertTrue(self.page.locator('main #accelerate').count() == 1)
@@ -138,7 +144,7 @@ class BackgroundAcceleratorWorkflowTest(unittest.TestCase):
         self.assertGreater(content.evaluate('el=>el.scrollTop'), 0)
         self.page.locator('#widget-panel-close').click()
         self.page.locator('#widget-accelerate').click()
-        expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 1 个')
+        expect(self.page.locator('#accelerator-process-summary')).to_contain_text('已勾选 0 个')
         self.assertEqual(content.evaluate('el=>el.scrollTop'), 0)
 
 

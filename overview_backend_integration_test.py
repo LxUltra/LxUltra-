@@ -14,9 +14,9 @@ class OverviewBackendIntegrationTest(unittest.TestCase):
     def metrics(self):
         return {"cpu":{"frequency":5578,"peakFrequency":5578,"eCoreFrequency":4383},
                 "temperatures":{"cpu":{"pCoreVoltage":1.348,"eCoreVoltage":1.349},
-                "sensors":[{"key":"cpu","type":"Clock","name":"P-Core #1"},
+                "sensors":getattr(self,"sensor_rows",[{"key":"cpu","type":"Clock","name":"P-Core #1"},
                            {"key":"cpu","type":"E-Core","name":"E-Core #1"},
-                           {"key":"cpu","type":"Clock","name":"E-Core #1"}]}}
+                           {"key":"cpu","type":"Clock","name":"E-Core #1"}])}}
 import builtins
 builtins.LX_TEST_API = API
 '''
@@ -36,6 +36,17 @@ builtins.LX_TEST_API = API
         self.assertEqual(result['cpu']['eCoreFrequency'], 4200)
         self.assertEqual(result['cpu']['frequencySource'], 'Windows 实际频率')
         self.assertIsNone(result['temperatures']['cpu']['vcore'])
+        api.sensor_rows = []
+        namespace['_CPU_FREQ_SAMPLER'].topology = lambda: (1, 1)
+        result = api.metrics()
+        self.assertEqual(result['cpu']['frequency'], 5150)
+        self.assertEqual(result['cpu']['eCoreFrequency'], 4200)
+        self.assertEqual(result['cpu']['frequencySource'], 'Windows 实际频率')
+        namespace['_CPU_FREQ_SAMPLER'].current = lambda: {}
+        unavailable = api.metrics()['cpu']
+        self.assertIsNone(unavailable['frequency'])
+        self.assertIsNone(unavailable['peakFrequency'])
+        self.assertIsNone(unavailable['eCoreFrequency'])
 
 
 if __name__ == '__main__':

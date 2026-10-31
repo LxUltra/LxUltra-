@@ -33,7 +33,7 @@
       if (item.protected||isLxUltra||isWindowsExecutable) { result.protected++; continue; }
       if (visibleSet.has(item.pid)||visibleExecutables.has(exeKey)) { result.visible++; continue; }
       if (item.memory >= memoryFloor || (item.cpuReady !== false && item.cpu >= cpuFloor))
-        result.items.push({...item, selected:true});
+        result.items.push({...item, selected:false});
     }
     result.items.sort((a,b)=>b.memory-a.memory);
     return result;
@@ -64,9 +64,10 @@
     const total=context.items.reduce((sum,item)=>sum+Math.max(0,Number(item.memory)||0),0);
     byId(context.actions).hidden=!context.scanned;
     byId(context.summary).textContent=context.scanned?`建议 ${context.items.length} 个 · 已勾选 ${selected.length} 个 · ${bytes(total)} 内存占用`:'';
+    byId(context.scan).disabled=context.busy;
     byId(context.run).disabled=context.busy||!selected.length;
     const quickButton=context.key==='widget'?byId('accelerator-quick-start'):null;
-    if(quickButton)quickButton.disabled=context.busy||(context.scanned&&!selected.length);
+    if(quickButton)quickButton.disabled=context.busy;
     byId(context.select).disabled=context.busy||!context.items.length;
     byId(context.clear).disabled=context.busy||!selected.length;
     const list=byId(context.list);
@@ -96,7 +97,7 @@
       render(context);
       const skipped=normalized.skipped?`已跳过 ${normalized.skipped} 条信息不全的记录（不会对其执行操作）。`:'';
       const status=context.items.length
-        ?`扫描完成：已勾选 ${context.items.length} 个无可见窗口且内存达到 160 MB 或 CPU 达到 5% 的当前用户程序；${skipped}请核对名单，取消要保留的程序，再点“预览并加速”。确认前不会关闭任何程序。`
+        ?`扫描完成：发现 ${context.items.length} 个无可见窗口且内存达到 160 MB 或 CPU 达到 5% 的当前用户程序；${skipped}默认未勾选。请只选确认可以关闭的程序，再点“预览并加速”。确认前不会关闭任何程序。`
         :`扫描完成，没有发现达到建议条件的无窗口后台程序。${skipped}`;
       setStatus(context,status,'complete');
     } catch(error) {
@@ -114,7 +115,7 @@
     if(!selected.length)return;
     if(!window.LxProcessCleanup?.preview){setStatus(context,'关闭预览暂不可用；没有程序被关闭。','warn');return}
     context.busy=true;
-    byId(context.run).disabled=true;
+    render(context);
     setStatus(context,'正在复核名单。确认前不会关闭程序…','busy');
     try {
       const result=await window.LxProcessCleanup.preview(selected.map(item=>({pid:item.pid,started:Number(item.started)})),message=>setStatus(context,message,message.includes('失败')?'warn':'info'));
@@ -136,9 +137,8 @@
   if(quickStart)quickStart.addEventListener('click',async()=>{
     const context=contexts[0];
     if(context.busy)return;
-    // Preserve a user's reviewed selection; a fresh page first obtains a scan.
-    if(!context.scanned)await scan(context);
-    if(context.scanned&&context.items.some(item=>item.selected))await accelerate(context);
+    await scan(context);
+    if(context.scanned)byId(context.actions).scrollIntoView?.({behavior:'smooth',block:'nearest'});
   });
 
   contexts.forEach(context=>{
